@@ -19,7 +19,7 @@ main(int argc, char *argv[])
     exit(1);
   }
 
-  sleep(t);
+  sleep(t * 10);
 
   exit(0);
 }
