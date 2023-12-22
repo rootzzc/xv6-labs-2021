@@ -2,6 +2,7 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
+// wait to merge
 void
 main(int argc, char *argv[])
 {
