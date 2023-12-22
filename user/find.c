@@ -37,17 +37,14 @@ void dir_dfs(char *path, char *target){
 
   struct dirent de;
   while (read(fd, &de, sizeof(de)) == sizeof(de)) {
-    if (strcmp(de.name, ".") == 0 || strcmp(de.name, "..") == 0)
+    if (strcmp(de.name, ".") == 0 || strcmp(de.name, "..") == 0 || de.inum == 0)
       continue;
 
     char *buf = malloc(512);
     strcpy(buf, path);
     my_strcat(buf, "/");
     my_strcat(buf, de.name);
-
-    // logger(buf);
-    logger(de.name);
-
+    
     int cfd;
     struct stat cst;
     if ((cfd = open(buf, 0)) < 0) {
@@ -62,7 +59,7 @@ void dir_dfs(char *path, char *target){
     if(cst.type == T_DIR){
       dir_dfs(buf, target);
     }else if(cst.type == T_FILE && strcmp(de.name, target) == 0){
-      // logger(buf);
+      logger(buf);
     }
 
     close(cfd);
