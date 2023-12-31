@@ -71,8 +71,11 @@ usertrap(void)
       exit(-1);
     }
     uint flags = PTE_FLAGS(va);
-    if(flags | PTE_COW){
-      uvmcowcopy(p->pagetable, va);
+    if((flags | PTE_COW) == 0){
+      panic("error write");
+    }
+    if(uvmcowcopy(p->pagetable, va) < 0){
+      exit(-1);
     }
   } else if((which_dev = devintr()) != 0){
     // ok

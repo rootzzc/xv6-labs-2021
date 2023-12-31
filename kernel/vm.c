@@ -360,7 +360,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     pte_t *pte = walk(pagetable, va0, 0);
     uint flags = PTE_FLAGS(*pte);
     if(flags | PTE_COW){
-      uvmcowcopy(pagetable, va0);
+      if(uvmcowcopy(pagetable, va0) < 0){
+        return -1;
+      }
       // after copy mem, need update pa, otherwise no output to console
       pa0 = walkaddr(pagetable, va0);
     }
@@ -456,27 +458,45 @@ uvmcow(pagetable_t old, pagetable_t new, uint64 sz)
   // install new pte
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      panic("uvmcow: pte should exist");
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      panic("uvmcow: page not present");
 
     // if old pte can write or cow, set cow flag and clear write flag
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
 
     // only origined pte is cow or writable, change to cow
-    // if((flags | PTE_COW) || (flags | PTE_W)){
+    if((flags | PTE_COW) || (flags | PTE_W)){
       flags &= ~PTE_W;
       flags |= PTE_COW;
-      *pte &= ~PTE_W;
-      *pte |= PTE_COW;
-    // }
+    }
 
-    if(mappages(new, i, PGSIZE, pa, flags | PTE_X) != 0){
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
+  }
+
+  // update old pte
+  for(i = 0; i < sz; i += PGSIZE){
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcow: pte should exist");
+    if((*pte & PTE_V) == 0)
+      panic("uvmcow: page not present");
+
+    // if old pte can write or cow, set cow flag and clear write flag
+    pa = PTE2PA(*pte);
+    flags = PTE_FLAGS(*pte);
+
+    // only origined pte is cow or writable, change to cow
+    if((flags | PTE_COW) || (flags | PTE_W)){
+      *pte &= ~PTE_W;
+      *pte |= PTE_COW;
+    }
+
     pa_ref[GETPAREFINDEX(pa)]++;
   }
+
   return 0;
 
  err:
@@ -486,14 +506,10 @@ uvmcow(pagetable_t old, pagetable_t new, uint64 sz)
 
 // copy new page for virutal address
 // check for not cow virtual address
-void uvmcowcopy(pagetable_t pg, uint64 va){
-    va = PGROUNDDOWN(va);
+int uvmcowcopy(pagetable_t pg, uint64 va){
     pte_t * pte = walk(pg, va, 0);
     uint64 pa = PTE2PA(*pte);
     uint flags = PTE_FLAGS(*pte);
-    if ((flags | PTE_COW) == 0) {
-      panic("usertrap: page fault of unshared page");
-    }
 
     // set flags for new page
     flags |= PTE_W;
@@ -501,7 +517,7 @@ void uvmcowcopy(pagetable_t pg, uint64 va){
 
     char *mem;
     if((mem = kalloc()) == 0) {
-      exit(-1);
+      return -1;
     }
     memmove(mem, (char*)pa, PGSIZE);
     uvmunmap(pg, va, 1, 1);
@@ -510,4 +526,5 @@ void uvmcowcopy(pagetable_t pg, uint64 va){
       uvmunmap(pg, va, 1, 0);
       panic("usertrap: mappages fault");
     }
+    return 0;
 }

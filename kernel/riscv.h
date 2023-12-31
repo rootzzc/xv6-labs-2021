@@ -361,7 +361,7 @@ sfence_vma()
 
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 
-#define GETPAREFINDEX(x) ((x) >> 12)
+#define GETPAREFINDEX(x) (((x) - KERNBASE) >> 12)
 // #define GETPAREFINDEX(x) (((x) - KERNBASE) / PGSIZE)
 
 // extract the three 9-bit page table indices from a virtual address.

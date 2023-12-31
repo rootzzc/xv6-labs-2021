@@ -173,7 +173,7 @@ int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 pte_t *         walk(pagetable_t, uint64, int);
 int             uvmcow(pagetable_t, pagetable_t, uint64);
-void            uvmcowcopy(pagetable_t, uint64);
+int            uvmcowcopy(pagetable_t, uint64);
 
 // plic.c
 void            plicinit(void);

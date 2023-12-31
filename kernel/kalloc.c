@@ -16,7 +16,7 @@ extern char end[]; // first address after kernel.
 
 // int pa_ref[(PHYSTOP - KERNBASE) / PGSIZE];  // indicate number of proc ref to physical page
 
-int pa_ref[PHYSTOP >> 12];  // indicate number of proc ref to physical page
+int pa_ref[PGNUM];  // indicate number of proc ref to physical page
 
 
 struct run {
@@ -54,15 +54,24 @@ kfree(void *pa)
 {
   struct run *r;
 
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
-    panic("kfree");
-
-  if(pa_ref[GETPAREFINDEX((uint64)pa)] >= 0){
+  // error here:
+  // usertrap(): unexpected scause 0x0000000000000002 pid=2
+  //             sepc=0x0000000000001000 stval=0x0000000000000000
+  // usertrap(): unexpected scause 0x000000000000000c pid=1
+  //             sepc=0x0000000000001000 stval=0x0000000000001000
+  // 0x0000000080005dc2
+  // 0x00000000800019c4
+  // 0x0000000080001f72
+  // panic: init exiting
+  if(pa_ref[GETPAREFINDEX((uint64)pa)] > 0){
     pa_ref[GETPAREFINDEX((uint64)pa)]--;
   }
-  if(--pa_ref[GETPAREFINDEX((uint64)pa)] > 0){
+  if(pa_ref[GETPAREFINDEX((uint64)pa)] > 0){
     return;
   }
+
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    panic("kfree");
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
