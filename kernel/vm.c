@@ -15,7 +15,8 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
-extern uint64 pa_ref[(PHYSTOP - KERNBASE) / PGSIZE];  // kalloc.c
+extern int pa_ref[PHYSTOP >> 12];  // indicate number of proc ref to physical page
+
 
 // Make a direct-map page table for the kernel.
 pagetable_t
@@ -350,19 +351,20 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
-  // if copyout to a cow page, alloc it
-  uint64 b_va, e_va, va;
-  b_va = PGROUNDDOWN(dstva);
-  e_va = dstva + len;
-  for(va = b_va; va < e_va; va += PGSIZE){
-    uvmcowcopy(pagetable, va);
-  }
-
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+
+    pte_t *pte = walk(pagetable, va0, 0);
+    uint flags = PTE_FLAGS(*pte);
+    if(flags | PTE_COW){
+      uvmcowcopy(pagetable, va0);
+      // after copy mem, need update pa, otherwise no output to console
+      pa0 = walkaddr(pagetable, va0);
+    }
+
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -458,21 +460,22 @@ uvmcow(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
 
+    // if old pte can write or cow, set cow flag and clear write flag
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
 
-    // if old pte can write or cow, set cow flag and clear write flag
-    if(flags & PTE_W || flags & PTE_COW){
-      flags |= PTE_COW;
+    // only origined pte is cow or writable, change to cow
+    // if((flags | PTE_COW) || (flags | PTE_W)){
       flags &= ~PTE_W;
-
-      *pte |= PTE_COW;
+      flags |= PTE_COW;
       *pte &= ~PTE_W;
-    }
+      *pte |= PTE_COW;
+    // }
 
-    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+    if(mappages(new, i, PGSIZE, pa, flags | PTE_X) != 0){
       goto err;
     }
+    pa_ref[GETPAREFINDEX(pa)]++;
   }
   return 0;
 
@@ -484,31 +487,27 @@ uvmcow(pagetable_t old, pagetable_t new, uint64 sz)
 // copy new page for virutal address
 // check for not cow virtual address
 void uvmcowcopy(pagetable_t pg, uint64 va){
-    pte_t *pte;
-    uint64 ref_pa, new_pa;
-    uint flags;
-
-    if((pte = walk(pg, va, 0)) == 0 || (*pte & PTE_COW) == 0){
-      return;
+    va = PGROUNDDOWN(va);
+    pte_t * pte = walk(pg, va, 0);
+    uint64 pa = PTE2PA(*pte);
+    uint flags = PTE_FLAGS(*pte);
+    if ((flags | PTE_COW) == 0) {
+      panic("usertrap: page fault of unshared page");
     }
 
-    // va is valid virtual address and cow physical address
-    ref_pa = PTE2PA(*pte);
-    if((new_pa = (uint64)kalloc()) == 0){
-      panic("no mem for kallco");
-    }
-
-    memmove((void*)new_pa, (char*)ref_pa, PGSIZE);
-    // change pte to write valid
-    flags = PTE_FLAGS(*pte);
+    // set flags for new page
     flags |= PTE_W;
     flags &= ~PTE_COW;
-    *pte &= ~PTE_V;  // avoid remap panic from mappages
-    if(mappages(pg, va, PGSIZE, (uint64)new_pa, flags) != 0){
-      kfree((void*)new_pa);
-      return;
+
+    char *mem;
+    if((mem = kalloc()) == 0) {
+      exit(-1);
     }
-    if(--pa_ref[GETPAREFINDEX((uint64)ref_pa)] == 0){
-      kfree((void*)ref_pa);
+    memmove(mem, (char*)pa, PGSIZE);
+    uvmunmap(pg, va, 1, 1);
+    if(mappages(pg, va, PGSIZE, (uint64)mem, flags) != 0){
+      kfree(mem);
+      uvmunmap(pg, va, 1, 0);
+      panic("usertrap: mappages fault");
     }
 }

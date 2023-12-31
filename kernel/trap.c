@@ -10,7 +10,6 @@ struct spinlock tickslock;
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
-extern uint64 pa_ref[(PHYSTOP - KERNBASE) / PGSIZE];  // kalloc.c
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
@@ -67,9 +66,14 @@ usertrap(void)
 
     syscall();
   } else if(r_scause() == 15){
-    uint64 va = r_stval();
-    printf("va: %p\n", va);
-    uvmcowcopy(p->pagetable, va);
+    uint64 va = PGROUNDDOWN(r_stval());
+    if(va >= MAXVA){
+      exit(-1);
+    }
+    uint flags = PTE_FLAGS(va);
+    if(flags | PTE_COW){
+      uvmcowcopy(p->pagetable, va);
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

@@ -14,7 +14,11 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
-uint64 pa_ref[(PHYSTOP - KERNBASE) / PGSIZE];  // indicate number of proc ref to physical page
+// int pa_ref[(PHYSTOP - KERNBASE) / PGSIZE];  // indicate number of proc ref to physical page
+
+int pa_ref[PHYSTOP >> 12];  // indicate number of proc ref to physical page
+
+
 struct run {
   struct run *next;
 };
@@ -53,7 +57,10 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  if(pa_ref[GETPAREFINDEX((uint64)pa)] != 0 && --pa_ref[GETPAREFINDEX((uint64)pa)] > 0){
+  if(pa_ref[GETPAREFINDEX((uint64)pa)] >= 0){
+    pa_ref[GETPAREFINDEX((uint64)pa)]--;
+  }
+  if(--pa_ref[GETPAREFINDEX((uint64)pa)] > 0){
     return;
   }
 
@@ -78,13 +85,13 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r){
+  if(r)
     kmem.freelist = r->next;
-    pa_ref[GETPAREFINDEX((uint64)r)] = 1;
-  }
   release(&kmem.lock);
 
-  if(r)
+  if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
+    pa_ref[GETPAREFINDEX((uint64)r)] = 1;
+  }
   return (void*)r;
 }

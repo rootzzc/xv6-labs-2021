@@ -309,6 +309,15 @@ r_tp()
   return x;
 }
 
+static inline uint64
+r_fp()
+{
+  uint64 x;
+  asm volatile("mv %0, fp" : "=r" (x) );
+  return x;
+}
+
+
 static inline void 
 w_tp(uint64 x)
 {
@@ -352,7 +361,8 @@ sfence_vma()
 
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 
-#define GETPAREFINDEX(x) (((x) - KERNBASE) / PGSIZE)
+#define GETPAREFINDEX(x) ((x) >> 12)
+// #define GETPAREFINDEX(x) (((x) - KERNBASE) / PGSIZE)
 
 // extract the three 9-bit page table indices from a virtual address.
 #define PXMASK          0x1FF // 9 bits
